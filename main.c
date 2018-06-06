@@ -19,18 +19,27 @@ Combining the Usart with the Joy stick to send data to the audrino to navigate t
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <string.h>
+#include <stdlib.h>
+#include <util/delay.h>
 //UCR included files
 #include <bit.h>
 #include <timer.h>
 #include <stdio.h>
-#include "io.c"	//included from added directory :D
-#include "io.h"
+#include "LCD_16x2_C_file.c"	//included from added directory :D
+#include "LCD_16x2_H_file.h"
 
 #include "adc.h"
 #include "adc.c"
 #include "usart.h"
 
+#define  Trigger_pin	PA0/* Trigger pin */
+int TimerOverflow = 0;
 
+
+ISR(TIMER1_OVF_vect)
+{
+	TimerOverflow++;		/* Increment Timer Overflow count */
+}
 
 
 
@@ -251,7 +260,7 @@ enum IRstates {start_IR, System_Off, System_On, wait_IR, wait_Off_IR};
 
 int IR(int state){
 	
-	unsigned char IR_A0 = (~PINA & 0x01);
+	unsigned char IR_A0 = (~PINA & 0x02);
 	switch (state)
 	{
 		case start_IR: state = System_Off; break;
@@ -337,47 +346,177 @@ int IR(int state){
 
 
 //----------Ultra sonic Start--------------------------------------
-// enum Ultrastates {startUltra, Base_Ultra, Send_Ultra};
-// 	
-// int Sonic(int state){
-// 	switch(state){
-// 		case startUltra: state = Base_Ultra;	break;
-// 		
-// 		case Base_Ultra:
-// 		
+//globals
+	char string[10];
+	long count;
+	double distance;
+	unsigned char alarm = 0;
+ enum Ultrastates {startUltra, Base_Ultra, measure, Send_Ultra};
+	//enum unta {one, two};
+int Sonic(int state){
+// 	switch(state)
+// 	{
+// 		case one:
+// 		state = two;
+// 		break;
+// 		case two:
+// 			state = two;
 // 		break;
 // 		
-// 		case Send_Ultra: 
-// 		break;
-// 		
-// 		default: state = startUltra; break;
+// 		default: state = one; break;
 // 	}
-// }
+// 	switch(state)
+// 	{
+// 		case one: break;
+// 		case two:
+// 		PORTC = 0x08;
+// 
+// 			PORTA |= (1 << Trigger_pin);/* Give 10us trigger pulse on trig. pin to HC-SR04 */
+// 			_delay_us(10);
+// 			PORTA &= (~(1 << Trigger_pin));
+// 			
+// 			TCNT1 = 0;			/* Clear Timer counter */
+// 			TCCR1B = 0x41;		/* Setting for capture rising edge, No pre-scaler*/
+// 			TIFR1 = 1<<ICF1;		/* Clear ICP flag (Input Capture flag) */
+// 			TIFR1 = 1<<TOV1;		/* Clear Timer Overflow flag */
+// 
+// 			/*Calculate width of Echo by Input Capture (ICP) on PortD PD6 */
+// 			
+// 			while ((TIFR1 & (1 << ICF1)) == 0);	/* Wait for rising edge */
+// 		PORTC = 0x10;
+// 			TCNT1 = 0;			/* Clear Timer counter */
+// 			TCCR1B = 0x01;		/* Setting for capture falling edge, No pre-scaler */
+// 			TIFR1 = 1<<ICF1;		/* Clear ICP flag (Input Capture flag) */
+// 			TIFR1 = 1<<TOV1;		/* Clear Timer Overflow flag */
+// 			TimerOverflow = 0;	/* Clear Timer overflow count */
+// 
+// 			while ((TIFR1 & (1 << ICF1)) == 0); /* Wait for falling edge */
+// 		PORTC = 0x20;
+// 			
+// 			count = ICR1 + (65535 * TimerOverflow);	/* Take value of capture register */
+// 			/* 8MHz Timer freq, sound speed =343 m/s, calculation mentioned in doc. */
+// 			distance = (double)count / 466.47;
+// 		PORTC = 0x40;
+// 			dtostrf(distance, 2, 2, string);/* Convert distance into string */
+// 			//strcat(string, " cm   ");
+// 			LCD_String_xy(2, 0, "Shookness = ");
+// 			LCD_String_xy(2, 12, string);	/* Print distance on LDC16x2 */
+// 			_delay_ms(200);
+// 		PORTC = 0x80;
+// 		break;
+// 	}
+	switch(state){
+		case startUltra: state = Base_Ultra;	break;
+		
+		case Base_Ultra: state = measure;		break;
+		
+		case measure:
+			state = Send_Ultra;
+		break;
+		
+		case Send_Ultra: 
+			state = Base_Ultra;
+		break;
+		
+		default: state = startUltra; break;
+	}
+	
+	switch(state){
+		case startUltra: break;
+		
+		case Base_Ultra: 
+			PORTA |= (1 << Trigger_pin);/* Give 10us trigger pulse on trig. pin to HC-SR04 */
+			_delay_us(10);
+			PORTA &= (~(1 << Trigger_pin));
+		
+			TCNT1 = 0;			/* Clear Timer counter */
+			TCCR1B = 0x41;		/* Setting for capture rising edge, No pre-scaler*/
+			TIFR1 = 1<<ICF1;		/* Clear ICP flag (Input Capture flag) */
+			TIFR1 = 1<<TOV1;		/* Clear Timer Overflow flag */
+		
+			while ((TIFR1 & (1 << ICF1)) == 0);	/* Wait for rising edge */
+			TCNT1 = 0;			/* Clear Timer counter */
+			TCCR1B = 0x01;		/* Setting for capture falling edge, No pre-scaler */
+			TIFR1 = 1<<ICF1;		/* Clear ICP flag (Input Capture flag) */
+			TIFR1 = 1<<TOV1;		/* Clear Timer Overflow flag */
+			TimerOverflow = 0;	/* Clear Timer overflow count */
+
+			while ((TIFR1 & (1 << ICF1)) == 0); /* Wait for falling edge */
+		PORTC = 0x08;
+		break;
+		
+		case measure:
+			
+			count = ICR1 + (65535 * TimerOverflow);	/* Take value of capture register */
+			/* 8MHz Timer freq, sound speed =343 m/s, calculation mentioned in doc. */
+			distance = (double)count / 466.47;
+		break;
+		
+		case Send_Ultra: 
+			count = ICR1 + (65535 * TimerOverflow);	/* Take value of capture register */
+			/* 8MHz Timer freq, sound speed =343 m/s, calculation mentioned in doc. */
+			distance = (double)count / 466.47;
+
+			dtostrf(distance, 2, 2, string);/* Convert distance into string */
+			//strcat(string, " cm   ");
+			LCD_String_xy(2, 0, "Shookness = ");
+			LCD_String_xy(2, 12, string);	/* Print distance on LDC16x2 */
+			_delay_ms(200);
+			
+			if(distance < 30){
+				if (Global_Direction >= 200)
+				{
+					Global_Direction += 0;
+				}
+				else{
+					Global_Direction += 200;		//if a dood is too close alert the masses	
+				}
+				alarm = 1;
+			}
+			
+			else
+			{
+				alarm = 0;	// for sounding alarm
+			}
+		PORTC = 0x80;
+		break;
+	}
+	return state;
+}
 //---------------Ultra Sonic End-----------------------------
 
 int main()
 {
-	DDRD = 0xFF; PORTD = 0x00;
-	DDRA = 0x00; PORTA = 0xFF; // IR input
+	DDRD = 0x0F; PORTD = 0xF0;  /*DDRD = 0x00; PORTD = 0xFF;*/
+	DDRA = 0x01; PORTA = 0xFE; // IR input
 	DDRB = 0xFF; PORTB = 0x00; // output for system signal
+	DDRC = 0xFF; PORTC = 0x00; // output for sw, e, sr, and lights
 
 
 	// Initializes the LCD display
-	LCD_init();
+	LCD_Init();
+	LCD_String_xy(1, 0, "Personal Space");
+
 	initUSART(0);
 	ADC_Init(5, 1, 1);
 	
+	sei();					/* Enable global interrupt */
+	TIMSK1 = (1 << TOIE1);	/* Enable Timer1 overflow interrupts */
+	TCCR1A = 0;				/* Set all bit to zero Normal operation */
+	
 	// Period for the tasks
-	unsigned long int Usart_calc = 100;
-	unsigned long int Joy_calc = 50;
-	unsigned long int IR_calc = 50;
+	unsigned long int Usart_calc = 20;
+	unsigned long int Joy_calc = 10;
+	unsigned long int IR_calc = 5;
+	unsigned long int Ultra_calc = 5;	// needs to go through 5 states within one usart calc
 	
 	//Calculating GCD
 	unsigned long int tmpGCD = 1;
 	//tmpGCD = Usart_calc;
 	tmpGCD = findGCD(Usart_calc, Joy_calc);	
 	tmpGCD = findGCD(tmpGCD, IR_calc);		
-		//only 1 tasks
+	tmpGCD = findGCD(tmpGCD, Ultra_calc);
+		//only 4 tasks
 	
 	//Greatest common divisor for all tasks or smallest time unit for tasks.
 	unsigned long int GCD = tmpGCD;
@@ -387,12 +526,13 @@ int main()
 	unsigned long int Usart_Period = Usart_calc/GCD;
 	unsigned long int Joy_Period = Joy_calc/GCD;
 	unsigned long int IR_Period = IR_calc/GCD;
+	unsigned long int Ultra_Period = Ultra_calc/GCD;
 	
 
 	
 	//Declare an array of tasks
-	static task task1, task2, task3; //, task4;          only 3 task
-	task *tasks[] = {&task1, &task2, &task3} ; //, &task4	 ..
+	static task task1, task2, task3, task4; //, task4;          only 3 task
+	task *tasks[] = {&task1, &task2, &task3, &task4} ; //, &task4	 ..
 	const unsigned short numTasks = sizeof(tasks)/sizeof(task*);
 	
 
@@ -413,6 +553,12 @@ int main()
 				task3.period = IR_Period;//Task Period.
 				task3.elapsedTime = IR_Period;//Task current elapsed time.
 				task3.TickFct = &IR;//Function pointer for the tick.
+				
+								// Task 4
+								task4.state = -1;//Task initial state.
+								task4.period = Ultra_Period;//Task Period.
+								task4.elapsedTime = Ultra_Period;//Task current elapsed time.
+								task4.TickFct = &Sonic;//Function pointer for the tick.
 	
 	// Set the timer and turn it on
 	TimerSet(GCD);
