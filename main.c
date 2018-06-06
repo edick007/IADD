@@ -208,7 +208,7 @@ int JoyStick(int state){
 		{
 			tempb = 0;
 		}
-		if (x >= 3*temp && x < 6*temp)
+		if (x >= 3*temp + 10 && x < 6*temp)
 		{
 			tempb = 4;
 		}
@@ -241,6 +241,120 @@ int JoyStick(int state){
 }
 
 //End Joystick-------------------------------
+
+
+
+
+//----------IR Sensor FSM Begin------------------------------------------------
+
+enum IRstates {start_IR, System_Off, System_On, wait_IR, wait_Off_IR};
+
+int IR(int state){
+	
+	unsigned char IR_A0 = (~PINA & 0x01);
+	switch (state)
+	{
+		case start_IR: state = System_Off; break;
+		
+		case System_Off:
+		if (IR_A0 == 1)
+		{
+			state = System_On;
+			break;
+		}
+		else if (IR_A0 == 0x00)
+		{
+			state = System_Off;
+			break;
+		}
+		else
+		{
+			state = System_Off;
+			break;
+		}
+		break;
+		
+		case System_On:
+		if (IR_A0 == 0x01)
+		{
+			state = System_On;
+		}
+		else if (IR_A0 == 0x00)
+		{
+			state = wait_IR;
+		}
+		break;
+		
+		case wait_IR:
+		if (IR_A0 == 0)
+		{
+			state = wait_IR;
+		}
+		else if(IR_A0 == 1)
+		{
+			state = wait_Off_IR;
+		}
+		break;
+		
+		case wait_Off_IR:
+		if (IR_A0 == 1)
+		{
+			state = wait_Off_IR;
+		}
+		else
+		{
+			state = System_Off;
+		}
+		
+		default: state = start_IR; break;
+	}
+	
+	switch(state){
+		case start_IR: break;
+		
+		case System_Off:
+		System_Flag = 0;	//system is off
+		break;
+		
+		case System_On:
+		System_Flag = 100;	//system is on
+		break;
+		
+		case wait_IR:
+		System_Flag = 100;
+		break;
+		
+		case wait_Off_IR:
+		System_Flag = 0;
+		break;
+	}
+	PORTB = System_Flag;
+	Global_Direction += System_Flag;
+	
+	return state;
+}
+//----------Player scroll FSM END------------------------------------------------
+
+
+//----------Ultra sonic Start--------------------------------------
+// enum Ultrastates {startUltra, Base_Ultra, Send_Ultra};
+// 	
+// int Sonic(int state){
+// 	switch(state){
+// 		case startUltra: state = Base_Ultra;	break;
+// 		
+// 		case Base_Ultra:
+// 		
+// 		break;
+// 		
+// 		case Send_Ultra: 
+// 		break;
+// 		
+// 		default: state = startUltra; break;
+// 	}
+// }
+//---------------Ultra Sonic End-----------------------------
+
 int main()
 {
 	DDRD = 0xFF; PORTD = 0x00;
@@ -256,11 +370,13 @@ int main()
 	// Period for the tasks
 	unsigned long int Usart_calc = 100;
 	unsigned long int Joy_calc = 50;
+	unsigned long int IR_calc = 50;
 	
 	//Calculating GCD
 	unsigned long int tmpGCD = 1;
 	//tmpGCD = Usart_calc;
-	tmpGCD = findGCD(Usart_calc, Joy_calc);			
+	tmpGCD = findGCD(Usart_calc, Joy_calc);	
+	tmpGCD = findGCD(tmpGCD, IR_calc);		
 		//only 1 tasks
 	
 	//Greatest common divisor for all tasks or smallest time unit for tasks.
@@ -270,12 +386,13 @@ int main()
 	//Recalculate GCD periods for scheduler
 	unsigned long int Usart_Period = Usart_calc/GCD;
 	unsigned long int Joy_Period = Joy_calc/GCD;
+	unsigned long int IR_Period = IR_calc/GCD;
 	
 
 	
 	//Declare an array of tasks
-	static task task1, task2; //, task4;          only 3 task
-	task *tasks[] = {&task1, &task2} ; //, &task4	 ..
+	static task task1, task2, task3; //, task4;          only 3 task
+	task *tasks[] = {&task1, &task2, &task3} ; //, &task4	 ..
 	const unsigned short numTasks = sizeof(tasks)/sizeof(task*);
 	
 
@@ -290,6 +407,12 @@ int main()
 		task2.period = Joy_Period;//Task Period.
 		task2.elapsedTime = Joy_Period;//Task current elapsed time.
 		task2.TickFct = &JoyStick;//Function pointer for the tick.
+		
+				// Task 3
+				task3.state = -1;//Task initial state.
+				task3.period = IR_Period;//Task Period.
+				task3.elapsedTime = IR_Period;//Task current elapsed time.
+				task3.TickFct = &IR;//Function pointer for the tick.
 	
 	// Set the timer and turn it on
 	TimerSet(GCD);
